@@ -1,14 +1,146 @@
-# 200 million urls challenge
+# The 200 Million URLs Challenge
 
-The "200 Million URLs Challenge" presents a problem in designing a datastorage  architecture capable of handling larger-scale data. The goal is to create a system that can  store 200 million URLs from 20,000 sources over a period of four years. Achieving this requires carefully balancing storage efficiency, performance, and scalability, all while managing the unique challenges posed by such a vast dataset.
+**Store 200 million URLs. Answer a handful of questions about them, fast. Show everyone how you did it.**
 
-To successfully tackle this challenge, the system must meet the following requirements:
+This is a hands-on data storage challenge. Don't write a big architecture document. Build something, measure it, break it, improve it, and then present what you learned. Use any language and any database.
 
-- Store 200 Million URLs: The datastorage system should be capable of storing and managing up to 200 million unique URLs, ensuring that each is indexed efficiently.  
-- URL Collection Over Four Years: URLs will be collected steadily over four years, with an average of 160,000 URLs added daily.
-- Core Lookup Capabilities: The system should allow for quick verification of whether a given URL is already stored. Users must be able to retrieve URLs that have been added on the current day avoiding duplicates. The datastorage system should support counting URLs by their top-level domain (TLD). Users should be able to count URLs associated with a specific domain and subdomain. The system must allow for querying URLs based on specific GET parameters.
-- Optional Features: The datastorage system can optionally store the link structure between URLs, enabling the retrieval of links originating from a specific URL and links pointing to a specific URL.
+## The problem
 
-Start by forking the "200mio URLs Challenge" repository to your local environment.  Before diving into coding, brainstorm potential strategies for solving the problem. Focus on practical, implementable ideas that balance theoretical considerations with hands-on development. This challenge emphasizes practical coding over extensive theoretical analysis. Start by building and testing parts of the solution, iteratively refining your approach based on the outcomes. Remember, this is meant to be a fun and engaging exercise, so enjoy the process of problem-solving.
-Designing a system to manage 200 million URLs comes with several significant challenges. Without access to 200 million URLs for testing, you'll need to generate synthetic data that mimics real-world scenarios to evaluate your system's performance. Given the sheer volume of data, the storage model must be efficient. URLs are complex entities, containing various components like protocol, domain, path, and query parameters, all of which may need separate indexing or processing. URLs on the web often don't follow strict standards, and issues like the order of GET arguments can complicate normalization and deduplication efforts. Traditional indexing methods might not be feasible due to the volume of data. Alternative strategies, such as partitioning or specialized data structures like Bloom filters, could offer more practical solutions. Inserting 160,000 URLs per day while maintaining responsive query performance is a significant challenge. You may need to implement batch processing, asynchronous insertion, or distributed datastorage systems to handle the load effectively. Estimating the required storage is crucial. This includes accounting for raw data as well as any additional metadata or indexing structures, ensuring that the system remains scalable over four years.
-The "200 Million URLs Challenge" is a exercise in designing a scalable database system. By addressing the unique challenges of scale, complexity, and performance, you can propose a solution that balances efficiency, scalability, and maintainability. Embrace the process, experiment with different approaches, and enjoy the journey of trying to tinker this wicked problem.
+A crawler watches 20,000 sources: websites, feeds and sitemaps. Every day it finds about 160,000 URLs. Some of them it has already seen. Over four years it collects 200 million unique URLs.
+
+Your job is to design and build the storage behind it.
+
+That sounds easy until you try it:
+
+- **Size.** A plain table with an index on a text column gets big and slow at this scale.
+- **Messy URLs.** Is `HTTP://Example.com/a?b=2&a=1` the same URL as `http://example.com/a?a=1&b=2`? Real URLs break the rules all the time.
+- **No test data.** You don't have 200 million real URLs lying around, so you'll have to generate realistic ones.
+- **Growth.** Adding new URLs every day has to stay fast in year four, and so do the queries.
+
+There is no single right answer. What's interesting is the trade-offs you make.
+
+## The numbers
+
+| | |
+|---|---|
+| Unique URLs after four years | **200,000,000** |
+| Sources | 20,000 |
+| Incoming URLs per day (average) | ~160,000, including URLs already stored |
+| New unique URLs per day (average) | ~137,000 |
+| Time span | 4 years (~1,460 days) |
+
+## What your system must do
+
+1. **Ingest:** take in the daily batch of URLs and store each unique URL exactly once.
+2. **Exists:** is this URL already stored?
+   `https://shop.example.com/item?id=42` → yes / no
+3. **New on a given day:** list all URLs that were first seen on a given day.
+4. **Count by top-level domain:** how many URLs are under `.de`?
+5. **Count by domain and subdomain:** how many URLs are under `example.com`, and how many are under `shop.example.com`? Both counts include the subdomains below that name.
+6. **Search by GET parameter:** find URLs that have a given parameter, like `utm_source`, or a given parameter with a given value, like `utm_source=newsletter`. Paginated results are fine.
+
+### Optional: the link graph
+
+7. **Outgoing links:** which URLs does a given URL link to?
+8. **Incoming links:** which URLs link to a given URL?
+
+The challenge doesn't say how many links a page has. Pick a number, such as 50 outgoing links per URL, and state it in your results.
+
+## Rules
+
+- **Use any tech you like:** Postgres, SQLite, ClickHouse, RocksDB, Parquet files, your own storage engine, a cloud service. Everything is allowed.
+- **Run on a single machine or a cluster.** It's your call. Just report what you used.
+- **Use synthetic data.** Generate it yourself; the hints below help. If you can, share your generator so others can reuse it.
+- **You don't have to load all 200 million.** Testing with 10 or 50 million and extrapolating is fine. Say that you did and show how you calculated it.
+- **Report what didn't work.** A well-explained dead end is a valuable result.
+- **Keep it fun.** Work iteratively: build a small version, measure it, improve it.
+
+## How to take part
+
+1. **Fork this repository**, or start your own repo and link to it.
+2. **Build a first version quickly**, measure it, then improve it.
+3. **Write up your results** in a `RESULTS.md` in your repo, using the template below.
+4. **Open an issue** in this repository titled `Submission: <your name or team>` and include the link to your repo.
+5. **Present your results** (see below).
+
+Teams are welcome. So are unfinished solutions, as long as they come with honest numbers.
+
+## What to report
+
+To make solutions comparable, copy this template into your `RESULTS.md`:
+
+```markdown
+# <Name / Team>: 200 Million URLs Challenge
+
+## Approach in one sentence
+
+## Setup
+- Hardware (CPU, RAM, disk type) or cloud instance type:
+- Software and versions:
+- URLs actually loaded:
+- How the test data was generated:
+
+## Storage
+- Size on disk, including indexes:
+- Bytes per URL:
+- Projected size at 200 million URLs:
+
+## Ingest
+- Time to ingest one day (160,000 URLs, including duplicate check):
+- Time for the initial bulk load:
+- Does ingest get slower as data grows? (numbers at different sizes if possible)
+
+## Queries
+| Query                        | Example used | Median | p99 |
+|------------------------------|--------------|--------|-----|
+| Exists                       |              |        |     |
+| New on a given day           |              |        |     |
+| Count by TLD                 |              |        |     |
+| Count by domain / subdomain  |              |        |     |
+| Search by GET parameter      |              |        |     |
+| Outgoing links (optional)    |              |        |     |
+| Incoming links (optional)    |              |        |     |
+
+## Design
+- Data model and why:
+- URL normalization rules (and what you decided NOT to normalize):
+- What I tried that didn't work:
+- Known weaknesses / what I'd do next:
+```
+
+## Presenting your results
+
+Plan for a 10 to 15 minute talk. A structure that works:
+
+1. **The idea:** your approach in one sentence.
+2. **The data model:** a diagram is enough.
+3. **The numbers:** storage, ingest time and query times.
+4. **The surprise:** what broke, what was harder or easier than expected.
+5. **Next time:** what you would do differently.
+
+## Hints
+
+**Generating realistic data**
+- Real traffic is skewed. A few domains have millions of URLs and most have only a handful, so pick domain sizes from a skewed (e.g. Zipf) distribution instead of a uniform one.
+- Include the ugly cases: tracking parameters (`utm_*`, `fbclid`), the same parameters in a different order, mixed-case host names, trailing slashes, `#fragments`, default ports (`:443`), percent-encoding, `www.` vs. no `www.`, internationalized domain names and very long URLs.
+- For more realism, get domains from the [Tranco list](https://tranco-list.eu/) or URL samples from [Common Crawl](https://commoncrawl.org/).
+
+**Decisions you'll have to make**
+- **When are two URLs the same?** Do you sort parameters? Strip `utm_*`? Lowercase the path, even though paths are case-sensitive? Write your rules down.
+- **What is a TLD?** Is it `uk` or `co.uk`? The [Public Suffix List](https://publicsuffix.org/) exists for this. Say which one you count.
+- **Do you store the full URL, or only its parts?**
+
+**Back-of-the-envelope**
+- If the average URL is 80 bytes, the raw text alone is 16 GB, before any index, metadata or link graph.
+
+**Ideas worth a look**
+- Split URLs into parts (scheme, host, path, query) and store them separately.
+- Store host names reversed (`com.example.shop`) so a domain and all its subdomains become a single prefix scan.
+- Hash URLs to fixed-size keys. How likely are collisions at 200 million?
+- Use Bloom filters for a fast "definitely not stored" answer.
+- Partition by day or by domain.
+- Try columnar formats, LSM-tree stores and dictionary encoding for repeated host names.
+
+---
+
+Have fun, and bring your numbers.
